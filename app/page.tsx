@@ -20,7 +20,7 @@ type Particle = Point & {
   spin: number;
   mode: "burst" | "laser";
 };
-type Laser = { active: boolean; tip: Point; direction: Point; lastEmit: number };
+type Laser = { active: boolean; target: Point; lastEmit: number };
 
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -87,7 +87,7 @@ export default function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const laserRef = useRef<Laser>({ active: false, tip: { x: 0, y: 0 }, direction: { x: 0, y: -1 }, lastEmit: 0 });
+  const laserRef = useRef<Laser>({ active: false, target: { x: 0, y: 0 }, lastEmit: 0 });
   const pinchFramesRef = useRef(0);
   const openFramesRef = useRef(0);
   const cooldownRef = useRef(0);
@@ -156,6 +156,13 @@ export default function Home() {
   const handleResults = useCallback((results: Results) => {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    const sourceWidth = videoRef.current?.videoWidth || w;
+    const sourceHeight = videoRef.current?.videoHeight || h;
+    const containScale = Math.min(w / sourceWidth, h / sourceHeight);
+    const cameraWidth = sourceWidth * containScale;
+    const cameraHeight = sourceHeight * containScale;
+    const cameraLeft = (w - cameraWidth) / 2;
+    const cameraTop = (h - cameraHeight) / 2;
     let sawRight = false;
     let sawLeft = false;
 
@@ -163,7 +170,10 @@ export default function Home() {
       const reported = results.multiHandedness?.[handIndex]?.label;
       // The camera pixels are not flipped before inference, so MediaPipe's selfie labels are reversed.
       const physicalHand = reported === "Left" ? "Right" : "Left";
-      const p = (index: number): Point => ({ x: (1 - landmarks[index].x) * w, y: landmarks[index].y * h });
+      const p = (index: number): Point => ({
+        x: cameraLeft + (1 - landmarks[index].x) * cameraWidth,
+        y: cameraTop + landmarks[index].y * cameraHeight,
+      });
       const wrist = p(0);
       const tips = [8, 12, 16, 20];
       const extendedTips = tips.filter((tip) => distance(p(tip), wrist) > distance(p(tip - 2), wrist) * 1.16);
@@ -185,12 +195,9 @@ export default function Home() {
         sawLeft = true;
         const indexExtended = extendedTips.includes(8);
         if (indexExtended) {
-          const tip = p(8);
-          const base = p(6);
-          const length = Math.max(distance(tip, base), 1);
           laserRef.current.active = true;
-          laserRef.current.tip = tip;
-          laserRef.current.direction = { x: (tip.x - base.x) / length, y: (tip.y - base.y) / length };
+          // The fingertip itself is the crosshair: wherever it appears on screen is where the stream lands.
+          laserRef.current.target = p(8);
         } else if (extendedTips.length === 0) {
           laserRef.current.active = false;
         }
@@ -261,36 +268,39 @@ export default function Home() {
 
       const laser = laserRef.current;
       if (laser.active) {
-        const maxDistance = Math.hypot(window.innerWidth, window.innerHeight) * 1.25;
+        const pulse = 1 + Math.sin(now / 75) * .12;
         ctx.save();
-        ctx.lineCap = "round";
-        ctx.strokeStyle = "rgba(255, 205, 54, .28)";
-        ctx.lineWidth = 38 + Math.sin(now / 70) * 8;
+        ctx.translate(laser.target.x, laser.target.y);
+        ctx.strokeStyle = "rgba(255, 216, 55, .95)";
+        ctx.lineWidth = 5;
         ctx.shadowColor = "#ffcf3d";
-        ctx.shadowBlur = 30;
+        ctx.shadowBlur = 24;
+        ctx.setLineDash([8, 8]);
+        ctx.lineDashOffset = -now / 18;
         ctx.beginPath();
-        ctx.moveTo(laser.tip.x, laser.tip.y);
-        ctx.lineTo(laser.tip.x + laser.direction.x * maxDistance, laser.tip.y + laser.direction.y * maxDistance);
+        ctx.arc(0, 0, 45 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-62, 0); ctx.lineTo(-24, 0);
+        ctx.moveTo(62, 0); ctx.lineTo(24, 0);
+        ctx.moveTo(0, -62); ctx.lineTo(0, -24);
+        ctx.moveTo(0, 62); ctx.lineTo(0, 24);
         ctx.stroke();
         ctx.restore();
-        for (let i = 0; i < 20; i++) {
-          const travel = ((i * 74 + now * .72) % maxDistance);
-          const wobble = Math.sin(i * 2.1 + now / 90) * 12;
-          const px = laser.tip.x + laser.direction.x * travel - laser.direction.y * wobble;
-          const py = laser.tip.y + laser.direction.y * travel + laser.direction.x * wobble;
-          const scale = .14 + ((i * 37) % 9) / 25;
-          drawPoop(ctx, px, py, scale, .96);
-        }
+        drawPoop(ctx, laser.target.x, laser.target.y, .32 + Math.sin(now / 60) * .05, .98);
         if (now - laser.lastEmit > 42) {
           laser.lastEmit = now;
-          for (let i = 0; i < 7; i++) {
-            const spread = (Math.random() - .5) * 7;
+          for (let i = 0; i < 10; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 8 + Math.random() * 23;
             particlesRef.current.push({
-              x: laser.tip.x, y: laser.tip.y,
-              vx: laser.direction.x * (18 + Math.random() * 17) - laser.direction.y * spread,
-              vy: laser.direction.y * (18 + Math.random() * 17) + laser.direction.x * spread,
-              life: 30 + Math.random() * 24, maxLife: 54,
-              scale: .09 + Math.random() * .44,
+              x: laser.target.x, y: laser.target.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 27 + Math.random() * 22, maxLife: 49,
+              scale: .08 + Math.random() * .5,
               spin: (Math.random() - .5) * .45,
               mode: "laser",
             });
@@ -375,7 +385,7 @@ export default function Home() {
         <div className="score"><span>BLASTS</span><strong>{score.toString().padStart(2, "0")}</strong></div>
       </header>
 
-      <section className="hud" aria-live="polite">
+      <section className={`hud ${status === "live" ? "hud-live" : ""}`} aria-live="polite">
         <div className={`live-dot ${status}`}><i />{status === "live" ? "CAMERA LIVE" : status === "loading" ? "LOADING" : "READY"}</div>
         <h1>{message}</h1>
         <div className="hand-guides">
@@ -384,13 +394,20 @@ export default function Home() {
         </div>
       </section>
 
+      {status === "live" && (
+        <div className="live-controls">
+          <span><b>R</b> 🤏 → 🖐️ THROW</span>
+          <span className="aim-control"><b>L</b> ☝️ AIM & SPRAY · ✊ STOP</span>
+        </div>
+      )}
+
       {status === "idle" && (
         <button className="start" onPointerDown={(e) => e.stopPropagation()} onClick={startCamera}>
           <span>START CAMERA</span><small>or press anywhere to test</small>
         </button>
       )}
 
-      <footer>NO POOPS WERE HARMED · PRESS + RELEASE ALSO WORKS</footer>
+      <footer className={status === "live" ? "hidden-footer" : ""}>NO POOPS WERE HARMED · PRESS + RELEASE ALSO WORKS</footer>
     </main>
   );
 }
