@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Poop Pop! — Gesture Game",
-  description: "Pinch to make a cartoon poop. Open your hand to launch it into a full-screen explosion.",
+  title: "Money — A Gesture Game",
+  description: "Money: an extravagant gesture-controlled camera game.",
   other: {
     "codex-preview": "development",
   },

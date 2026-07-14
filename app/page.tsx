@@ -26,7 +26,6 @@ type Weapon = {
   mode: "none" | "gun" | "grin";
   palm: Point;
   direction: Point;
-  depth: number;
   scale: number;
   lastEmit: number;
   lastMuzzle: Point;
@@ -137,41 +136,15 @@ function getGunMuzzle(palm: Point, direction: Point, scale: number) {
   return { x: palm.x + Math.cos(angle) * 87 * scale, y: palm.y + Math.sin(angle) * 87 * scale };
 }
 
-function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, depth: number, now: number) {
+function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, now: number) {
   const perpendicular = { x: -direction.y, y: direction.x };
-  const lateralLength = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
-  const length = Math.abs(depth) > .42 ? 165 : lateralLength;
+  const length = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
   const end = { x: muzzle.x + direction.x * length, y: muzzle.y + direction.y * length };
   ctx.save();
   ctx.shadowColor = "rgba(48, 22, 9, .68)";
   ctx.shadowBlur = 20;
 
-  if (Math.abs(depth) > .42) {
-    const towardViewer = depth > 0;
-    const layers = 13;
-    for (let i = 0; i < layers; i++) {
-      const t = i / (layers - 1);
-      const perspective = towardViewer ? t : 1 - t;
-      const travel = 16 + t * 150;
-      const size = 10 + perspective * 82;
-      const wobble = Math.sin(now / 80 + i * 1.7) * size * .11;
-      const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
-      const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
-      const mud = ctx.createRadialGradient(x - size * .2, y - size * .2, 2, x, y, size);
-      mud.addColorStop(0, "rgba(183, 111, 53, .96)");
-      mud.addColorStop(.48, "rgba(105, 55, 26, .98)");
-      mud.addColorStop(1, "rgba(52, 25, 12, .96)");
-      ctx.fillStyle = mud;
-      ctx.beginPath();
-      ctx.ellipse(x, y, size * (1 + Math.sin(i * 2.3) * .14), size * .76, now / 900 + i, 0, Math.PI * 2);
-      ctx.fill();
-      if (i > 2) {
-        ctx.fillStyle = "rgba(36, 19, 11, .8)";
-        ctx.beginPath(); ctx.arc(x + size * .18, y - size * .08, Math.max(2, size * .09), 0, Math.PI * 2); ctx.fill();
-      }
-    }
-  } else {
-    const steps = 20;
+  const steps = 20;
     const left: Point[] = [];
     const right: Point[] = [];
     for (let i = 0; i <= steps; i++) {
@@ -210,11 +183,10 @@ function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: 
       }
       ctx.stroke();
     }
-  }
   ctx.shadowColor = "transparent";
   for (let i = 0; i < 16; i++) {
     const travel = ((i * 37 + now * .55) % length);
-    const wobble = Math.sin(i * 2.4 + now / 90) * (5 + Math.abs(depth) * 18);
+    const wobble = Math.sin(i * 2.4 + now / 90) * 7;
     const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
     const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
     ctx.fillStyle = i % 3 ? "#422313" : "#b26a35";
@@ -277,7 +249,7 @@ export default function Home() {
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const weaponRef = useRef<Weapon>({
-    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, depth: 0, scale: 1,
+    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, scale: 1,
     lastEmit: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
@@ -289,7 +261,7 @@ export default function Home() {
   const detectRafRef = useRef(0);
   const runningRef = useRef(false);
   const [status, setStatus] = useState<"idle" | "loading" | "live" | "error">("idle");
-  const [message, setMessage] = useState("Ready for absolute nonsense?");
+  const [message, setMessage] = useState("FORTUNE FAVORS THE BOLD");
   const [score, setScore] = useState(0);
 
   const resizeCanvas = useCallback(() => {
@@ -307,7 +279,7 @@ export default function Home() {
     if (Date.now() < cooldownRef.current || poopRef.current?.state === "flying") return;
     if (!poopRef.current) {
       poopRef.current = { ...point, state: "held", born: performance.now() };
-      setMessage("POOP ACQUIRED — OPEN YOUR HAND!");
+      setMessage("ASSET ACQUIRED — OPEN YOUR HAND");
     } else if (poopRef.current.state === "held") {
       poopRef.current.x += (point.x - poopRef.current.x) * .45;
       poopRef.current.y += (point.y - poopRef.current.y) * .45;
@@ -319,7 +291,7 @@ export default function Home() {
     poopRef.current.state = "flying";
     poopRef.current.launched = performance.now();
     cooldownRef.current = Date.now() + 950;
-    setMessage("YEET!");
+    setMessage("LIQUIDATE!");
   }, []);
 
   const explode = useCallback((x: number, y: number) => {
@@ -343,8 +315,8 @@ export default function Home() {
     particlesRef.current.push(...particles);
     flashRef.current = 14;
     setScore((value) => value + 1);
-    setMessage("TOTAL POOP-OCALYPSE!");
-    window.setTimeout(() => setMessage("PINCH TO RELOAD"), 650);
+    setMessage("A FORTUNE IN MOTION");
+    window.setTimeout(() => setMessage("PINCH TO REINVEST"), 650);
   }, []);
 
   const handleResults = useCallback((results: Results) => {
@@ -409,18 +381,14 @@ export default function Home() {
         const base = p(6);
         const tip = p(8);
         const screenLength = distance(base, tip);
-        const depthPixels = (landmarks[6].z - landmarks[8].z) * cameraWidth;
-        const directionLength3D = Math.max(Math.hypot(screenLength, depthPixels), 1);
         const direction = screenLength > 8
           ? { x: (tip.x - base.x) / screenLength, y: (tip.y - base.y) / screenLength }
           : weaponRef.current.direction;
-        const depth = Math.max(-1, Math.min(1, depthPixels / directionLength3D));
         const weaponScale = Math.min(1.28, Math.max(.58, distance(wrist, palm) / 78));
         if (indexExtended) {
           weaponRef.current.mode = "gun";
           weaponRef.current.palm = palm;
           weaponRef.current.direction = direction;
-          weaponRef.current.depth = depth;
           weaponRef.current.scale = weaponScale;
         } else if (straightFingers.every((value) => !value)) {
           if (weaponRef.current.mode === "gun") weaponRef.current.dripUntil = performance.now() + 1100;
@@ -464,7 +432,7 @@ export default function Home() {
 
   const startCamera = useCallback(async () => {
     setStatus("loading");
-    setMessage("WAKING UP THE POOP DETECTOR…");
+    setMessage("SUMMONING THE HOUSE…");
     try {
       if (!window.Hands) {
         await new Promise<void>((resolve, reject) => {
@@ -518,7 +486,7 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       setStatus("error");
-      setMessage("CAMERA SAID NO — USE PRESS & RELEASE");
+      setMessage("THE HOUSE REQUIRES CAMERA ACCESS");
     }
   }, [handleFaceResults, handleResults]);
 
@@ -540,18 +508,16 @@ export default function Home() {
       if (weapon.mode === "gun") {
         const muzzle = getGunMuzzle(weapon.palm, weapon.direction, weapon.scale);
         weapon.lastMuzzle = muzzle;
-        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, weapon.depth, now);
+        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, now);
         drawGun(ctx, weapon.palm, weapon.direction, weapon.scale);
         if (now - weapon.lastEmit > 36) {
           weapon.lastEmit = now;
           for (let i = 0; i < 7; i++) {
-            const side = (Math.random() - .5) * (8 + Math.abs(weapon.depth) * 16);
-            const depthAngle = Math.random() * Math.PI * 2;
-            const depthBurst = Math.max(0, weapon.depth) * (8 + Math.random() * 16);
+            const side = (Math.random() - .5) * 8;
             particlesRef.current.push({
               x: streamEnd.x, y: streamEnd.y,
-              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side + Math.cos(depthAngle) * depthBurst,
-              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + Math.sin(depthAngle) * depthBurst + 2,
+              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side,
+              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + 2,
               life: 28 + Math.random() * 20, maxLife: 48,
               scale: .18 + Math.random() * .45,
               spin: 0,
@@ -661,10 +627,18 @@ export default function Home() {
       <video ref={videoRef} className={`camera ${status === "live" ? "visible" : ""}`} playsInline muted />
       <div className="camera-tint" />
       <canvas ref={canvasRef} className="fx-canvas" />
+      <div className="corner-charms" aria-hidden="true">
+        <span className="charm charm-1">⛰️</span>
+        <span className="charm charm-2">🌊</span>
+        <span className="charm charm-3">🐱</span>
+        <span className="charm charm-4">🐶</span>
+        <span className="charm charm-5">⛺️</span>
+        <span className="charm charm-6">💰</span>
+      </div>
 
       <header className="topbar">
-        <div className="brand"><span>💩</span> POOP POP!</div>
-        <div className="score"><span>BLASTS</span><strong>{score.toString().padStart(2, "0")}</strong></div>
+        <div className="brand"><span>M</span><em>MONEY</em></div>
+        <div className="score"><span>FORTUNE</span><strong>{score.toString().padStart(2, "0")}</strong></div>
       </header>
 
       <section className={`hud ${status === "live" ? "hud-live" : ""}`} aria-live="polite">
@@ -689,7 +663,7 @@ export default function Home() {
         </button>
       )}
 
-      <footer className={status === "live" ? "hidden-footer" : ""}>NO POOPS WERE HARMED · PRESS + RELEASE ALSO WORKS</footer>
+      <footer className={status === "live" ? "hidden-footer" : ""}>MONEY NEVER SLEEPS · PRESS + RELEASE ALSO WORKS</footer>
     </main>
   );
 }
