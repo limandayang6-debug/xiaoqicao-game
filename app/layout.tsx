@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Money — A Gesture Game",
-  description: "Money: an extravagant gesture-controlled camera game.",
+  title: "消气操",
+  description: "一个使用摄像头手势控制的消气小游戏。",
   other: {
     "codex-preview": "development",
   },

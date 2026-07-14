@@ -29,6 +29,7 @@ type Weapon = {
   depth: number;
   scale: number;
   lastEmit: number;
+  lastWealthAt: number;
   lastMuzzle: Point;
   dripUntil: number;
 };
@@ -280,7 +281,7 @@ export default function Home() {
   const particlesRef = useRef<Particle[]>([]);
   const weaponRef = useRef<Weapon>({
     mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, depth: 0, scale: 1,
-    lastEmit: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
+    lastEmit: 0, lastWealthAt: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
   const pinchFramesRef = useRef(0);
@@ -291,7 +292,7 @@ export default function Home() {
   const detectRafRef = useRef(0);
   const runningRef = useRef(false);
   const [status, setStatus] = useState<"idle" | "loading" | "live" | "error">("idle");
-  const [message, setMessage] = useState("FORTUNE FAVORS THE BOLD");
+  const [message, setMessage] = useState("点击开始消气");
   const [score, setScore] = useState(0);
 
   const resizeCanvas = useCallback(() => {
@@ -309,7 +310,7 @@ export default function Home() {
     if (Date.now() < cooldownRef.current || poopRef.current?.state === "flying") return;
     if (!poopRef.current) {
       poopRef.current = { ...point, state: "held", born: performance.now() };
-      setMessage("ASSET ACQUIRED — OPEN YOUR HAND");
+      setMessage("已获得一坨，张开右手投掷");
     } else if (poopRef.current.state === "held") {
       poopRef.current.x += (point.x - poopRef.current.x) * .45;
       poopRef.current.y += (point.y - poopRef.current.y) * .45;
@@ -321,7 +322,7 @@ export default function Home() {
     poopRef.current.state = "flying";
     poopRef.current.launched = performance.now();
     cooldownRef.current = Date.now() + 950;
-    setMessage("LIQUIDATE!");
+    setMessage("发射");
   }, []);
 
   const explode = useCallback((x: number, y: number) => {
@@ -345,8 +346,8 @@ export default function Home() {
     particlesRef.current.push(...particles);
     flashRef.current = 14;
     setScore((value) => value + 1);
-    setMessage("A FORTUNE IN MOTION");
-    window.setTimeout(() => setMessage("PINCH TO REINVEST"), 650);
+    setMessage("财富爆发");
+    window.setTimeout(() => setMessage("右手捏合即可继续"), 650);
   }, []);
 
   const handleResults = useCallback((results: Results) => {
@@ -419,6 +420,7 @@ export default function Home() {
           : weaponRef.current.direction;
         const weaponScale = Math.min(1.28, Math.max(.58, distance(wrist, palm) / 78));
         if (indexExtended) {
+          if (weaponRef.current.mode !== "gun") weaponRef.current.lastWealthAt = performance.now();
           weaponRef.current.mode = "gun";
           weaponRef.current.palm = palm;
           weaponRef.current.direction = direction;
@@ -466,7 +468,7 @@ export default function Home() {
 
   const startCamera = useCallback(async () => {
     setStatus("loading");
-    setMessage("SUMMONING THE HOUSE…");
+    setMessage("正在开启摄像头");
     try {
       if (!window.Hands) {
         await new Promise<void>((resolve, reject) => {
@@ -516,11 +518,11 @@ export default function Home() {
       };
       detect();
       setStatus("live");
-      setMessage("RIGHT HAND THROWS · LEFT HAND FIRES");
+      setMessage("右手投掷，左手喷射");
     } catch (error) {
       console.error(error);
       setStatus("error");
-      setMessage("THE HOUSE REQUIRES CAMERA ACCESS");
+      setMessage("请允许使用摄像头");
     }
   }, [handleFaceResults, handleResults]);
 
@@ -540,6 +542,11 @@ export default function Home() {
 
       const weapon = weaponRef.current;
       if (weapon.mode === "gun") {
+        const wealthTicks = Math.floor((now - weapon.lastWealthAt) / 2000);
+        if (wealthTicks > 0) {
+          weapon.lastWealthAt += wealthTicks * 2000;
+          setScore((value) => value + wealthTicks);
+        }
         const muzzle = getGunMuzzle(weapon.palm, weapon.direction, weapon.scale);
         weapon.lastMuzzle = muzzle;
         const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, weapon.depth, now);
@@ -659,7 +666,8 @@ export default function Home() {
   };
 
   return (
-    <main className="game" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={launchPoop}>
+    <main className={`game ${status}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={launchPoop}>
+      {status !== "live" && <div className="start-background" />}
       <video ref={videoRef} className={`camera ${status === "live" ? "visible" : ""}`} playsInline muted />
       <div className="camera-tint" />
       <canvas ref={canvasRef} className="fx-canvas" />
@@ -673,33 +681,33 @@ export default function Home() {
       </div>
 
       <header className="topbar">
-        <div className="brand"><span>M</span><em>MONEY</em></div>
-        <div className="score"><span>FORTUNE</span><strong>{score.toString().padStart(2, "0")}</strong></div>
+        <div className="brand"><em>消气操</em></div>
+        <div className="score"><span>财富</span><strong>{score.toString().padStart(2, "0")}</strong></div>
       </header>
 
       <section className={`hud ${status === "live" ? "hud-live" : ""}`} aria-live="polite">
-        <div className={`live-dot ${status}`}><i />{status === "live" ? "CAMERA LIVE" : status === "loading" ? "LOADING" : "READY"}</div>
-        {status !== "live" && <h1>{message}</h1>}
+        <div className={`live-dot ${status}`}><i />{status === "live" ? "摄像头已开启" : status === "loading" ? "正在加载" : "准备就绪"}</div>
+        {status === "error" && <h1>{message}</h1>}
         <div className="hand-guides">
-          <div className="gesture-guide"><strong>RIGHT</strong><span className="gesture">🤏 → 🖐️</span><p><b>THROW</b><small>pinch, then open</small></p></div>
-          <div className="gesture-guide laser-guide"><strong>LEFT</strong><span className="gesture">☝️ → ✊</span><p><b>POOP LASER</b><small>point to fire, fist to stop</small></p></div>
+          <div className="gesture-guide"><strong>右手</strong><span className="gesture">🤏 → 🖐️</span><p><b>投掷</b><small>捏合生成，张手爆炸</small></p></div>
+          <div className="gesture-guide laser-guide"><strong>左手</strong><span className="gesture">☝️ → ✊</span><p><b>泥流喷射</b><small>伸指开火，握拳停止</small></p></div>
         </div>
       </section>
 
       {status === "live" && (
         <div className="live-controls">
-          <span><b>R</b> 🤏 → 🖐️ THROW</span>
-          <span className="aim-control"><b>L</b> ☝️ AIM & SPRAY · ✊ STOP</span>
+          <span><b>右</b> 🤏 → 🖐️ 投掷</span>
+          <span className="aim-control"><b>左</b> ☝️ 喷射 · ✊ 停止</span>
         </div>
       )}
 
       {status === "idle" && (
         <button className="start" onPointerDown={(e) => e.stopPropagation()} onClick={startCamera}>
-          <span>START CAMERA</span><small>or press anywhere to test</small>
+          <span>开始消气</span><small>开启摄像头，也可按住画面后松手体验</small>
         </button>
       )}
 
-      <footer className={status === "live" ? "hidden-footer" : ""}>MONEY NEVER SLEEPS · PRESS + RELEASE ALSO WORKS</footer>
+      <footer className={status === "live" ? "hidden-footer" : ""}>不要生气　不要生气</footer>
     </main>
   );
 }
