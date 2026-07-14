@@ -26,6 +26,7 @@ type Weapon = {
   mode: "none" | "gun" | "grin";
   palm: Point;
   direction: Point;
+  depth: number;
   scale: number;
   lastEmit: number;
   lastMuzzle: Point;
@@ -128,42 +129,96 @@ function drawGun(ctx: CanvasRenderingContext2D, palm: Point, direction: Point, s
   ctx.fillStyle = "#f3d35b";
   ctx.beginPath(); ctx.arc(12, -12, 4, 0, Math.PI * 2); ctx.arc(46, -12, 4, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
-  return { x: palm.x + Math.cos(angle) * 78 * scale, y: palm.y + Math.sin(angle) * 78 * scale };
+  return getGunMuzzle(palm, direction, scale);
 }
 
-function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, now: number) {
+function getGunMuzzle(palm: Point, direction: Point, scale: number) {
+  const angle = Math.atan2(direction.y, direction.x);
+  return { x: palm.x + Math.cos(angle) * 87 * scale, y: palm.y + Math.sin(angle) * 87 * scale };
+}
+
+function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, depth: number, now: number) {
   const perpendicular = { x: -direction.y, y: direction.x };
-  const length = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
+  const lateralLength = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
+  const length = Math.abs(depth) > .42 ? 165 : lateralLength;
   const end = { x: muzzle.x + direction.x * length, y: muzzle.y + direction.y * length };
   ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const wave = Math.sin(now / 75) * 8;
-  const trace = () => {
+  ctx.shadowColor = "rgba(48, 22, 9, .68)";
+  ctx.shadowBlur = 20;
+
+  if (Math.abs(depth) > .42) {
+    const towardViewer = depth > 0;
+    const layers = 13;
+    for (let i = 0; i < layers; i++) {
+      const t = i / (layers - 1);
+      const perspective = towardViewer ? t : 1 - t;
+      const travel = 16 + t * 150;
+      const size = 10 + perspective * 82;
+      const wobble = Math.sin(now / 80 + i * 1.7) * size * .11;
+      const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
+      const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
+      const mud = ctx.createRadialGradient(x - size * .2, y - size * .2, 2, x, y, size);
+      mud.addColorStop(0, "rgba(183, 111, 53, .96)");
+      mud.addColorStop(.48, "rgba(105, 55, 26, .98)");
+      mud.addColorStop(1, "rgba(52, 25, 12, .96)");
+      ctx.fillStyle = mud;
+      ctx.beginPath();
+      ctx.ellipse(x, y, size * (1 + Math.sin(i * 2.3) * .14), size * .76, now / 900 + i, 0, Math.PI * 2);
+      ctx.fill();
+      if (i > 2) {
+        ctx.fillStyle = "rgba(36, 19, 11, .8)";
+        ctx.beginPath(); ctx.arc(x + size * .18, y - size * .08, Math.max(2, size * .09), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  } else {
+    const steps = 20;
+    const left: Point[] = [];
+    const right: Point[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const travel = length * t;
+      const wave = Math.sin(t * 16 + now / 75) * (3 + t * 10);
+      const width = 4 + t * 23 + Math.sin(t * 25 - now / 95) * (1 + t * 4);
+      const cx = muzzle.x + direction.x * travel + perpendicular.x * wave;
+      const cy = muzzle.y + direction.y * travel + perpendicular.y * wave;
+      left.push({ x: cx + perpendicular.x * width, y: cy + perpendicular.y * width });
+      right.push({ x: cx - perpendicular.x * width, y: cy - perpendicular.y * width });
+    }
+    const mud = ctx.createLinearGradient(muzzle.x, muzzle.y, end.x, end.y);
+    mud.addColorStop(0, "#713719");
+    mud.addColorStop(.45, "#5d2e17");
+    mud.addColorStop(1, "#3d1f10");
+    ctx.fillStyle = mud;
     ctx.beginPath();
     ctx.moveTo(muzzle.x, muzzle.y);
-    ctx.bezierCurveTo(
-      muzzle.x + direction.x * length * .34 + perpendicular.x * wave,
-      muzzle.y + direction.y * length * .34 + perpendicular.y * wave,
-      muzzle.x + direction.x * length * .68 - perpendicular.x * wave,
-      muzzle.y + direction.y * length * .68 - perpendicular.y * wave,
-      end.x, end.y,
-    );
-  };
-  ctx.shadowColor = "rgba(62, 27, 10, .65)";
-  ctx.shadowBlur = 18;
-  ctx.strokeStyle = "rgba(63, 31, 14, .94)"; ctx.lineWidth = 34; trace(); ctx.stroke();
+    left.forEach((point) => ctx.lineTo(point.x, point.y));
+    right.reverse().forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath(); ctx.fill();
+    ctx.shadowColor = "transparent";
+    for (let lane = 0; lane < 4; lane++) {
+      ctx.strokeStyle = lane % 2 ? "rgba(190,115,55,.34)" : "rgba(41,21,12,.46)";
+      ctx.lineWidth = 3 + lane * 1.4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const travel = length * t;
+        const offset = Math.sin(t * (13 + lane) + now / (82 + lane * 8)) * (2 + t * 12) + (lane - 1.5) * 4;
+        const x = muzzle.x + direction.x * travel + perpendicular.x * offset;
+        const y = muzzle.y + direction.y * travel + perpendicular.y * offset;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
   ctx.shadowColor = "transparent";
-  ctx.strokeStyle = "rgba(121, 65, 29, .98)"; ctx.lineWidth = 26; trace(); ctx.stroke();
-  ctx.strokeStyle = "rgba(175, 102, 48, .78)"; ctx.lineWidth = 10; trace(); ctx.stroke();
-  ctx.strokeStyle = "rgba(236, 172, 91, .52)"; ctx.lineWidth = 3; trace(); ctx.stroke();
-  for (let i = 0; i < 11; i++) {
-    const travel = ((i * 47 + now * .48) % length);
-    const wobble = Math.sin(i * 2.4 + now / 90) * 8;
+  for (let i = 0; i < 16; i++) {
+    const travel = ((i * 37 + now * .55) % length);
+    const wobble = Math.sin(i * 2.4 + now / 90) * (5 + Math.abs(depth) * 18);
     const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
     const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
-    ctx.fillStyle = i % 3 ? "#5f3219" : "#c47b3b";
-    ctx.beginPath(); ctx.ellipse(x, y, 3 + i % 4, 2 + i % 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = i % 3 ? "#422313" : "#b26a35";
+    ctx.beginPath(); ctx.ellipse(x, y, 3 + i % 5, 2 + i % 4, 0, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
   return end;
@@ -222,7 +277,7 @@ export default function Home() {
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const weaponRef = useRef<Weapon>({
-    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, scale: 1,
+    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, depth: 0, scale: 1,
     lastEmit: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
@@ -332,19 +387,42 @@ export default function Home() {
         if (openFramesRef.current >= 2) launchPoop();
       } else {
         sawLeft = true;
-        const indexExtended = extendedTips.includes(8);
+        const isStraight3D = (mcp: number, pip: number, tipIndex: number) => {
+          const a = landmarks[mcp];
+          const b = landmarks[pip];
+          const c = landmarks[tipIndex];
+          const first = { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+          const second = { x: c.x - b.x, y: c.y - b.y, z: c.z - b.z };
+          const dot = first.x * second.x + first.y * second.y + first.z * second.z;
+          const firstLength = Math.hypot(first.x, first.y, first.z);
+          const secondLength = Math.hypot(second.x, second.y, second.z);
+          return dot / Math.max(firstLength * secondLength, .0001) < -.68;
+        };
+        const straightFingers = [
+          isStraight3D(5, 6, 8),
+          isStraight3D(9, 10, 12),
+          isStraight3D(13, 14, 16),
+          isStraight3D(17, 18, 20),
+        ];
+        const indexExtended = straightFingers[0];
         const palm = p(9);
         const base = p(6);
         const tip = p(8);
-        const directionLength = Math.max(distance(base, tip), 1);
-        const direction = { x: (tip.x - base.x) / directionLength, y: (tip.y - base.y) / directionLength };
+        const screenLength = distance(base, tip);
+        const depthPixels = (landmarks[6].z - landmarks[8].z) * cameraWidth;
+        const directionLength3D = Math.max(Math.hypot(screenLength, depthPixels), 1);
+        const direction = screenLength > 8
+          ? { x: (tip.x - base.x) / screenLength, y: (tip.y - base.y) / screenLength }
+          : weaponRef.current.direction;
+        const depth = Math.max(-1, Math.min(1, depthPixels / directionLength3D));
         const weaponScale = Math.min(1.28, Math.max(.58, distance(wrist, palm) / 78));
         if (indexExtended) {
           weaponRef.current.mode = "gun";
           weaponRef.current.palm = palm;
           weaponRef.current.direction = direction;
+          weaponRef.current.depth = depth;
           weaponRef.current.scale = weaponScale;
-        } else if (extendedTips.length === 0) {
+        } else if (straightFingers.every((value) => !value)) {
           if (weaponRef.current.mode === "gun") weaponRef.current.dripUntil = performance.now() + 1100;
           weaponRef.current.mode = "grin";
           weaponRef.current.palm = palm;
@@ -460,17 +538,20 @@ export default function Home() {
 
       const weapon = weaponRef.current;
       if (weapon.mode === "gun") {
-        const muzzle = drawGun(ctx, weapon.palm, weapon.direction, weapon.scale);
+        const muzzle = getGunMuzzle(weapon.palm, weapon.direction, weapon.scale);
         weapon.lastMuzzle = muzzle;
-        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, now);
+        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, weapon.depth, now);
+        drawGun(ctx, weapon.palm, weapon.direction, weapon.scale);
         if (now - weapon.lastEmit > 36) {
           weapon.lastEmit = now;
           for (let i = 0; i < 7; i++) {
-            const side = (Math.random() - .5) * 8;
+            const side = (Math.random() - .5) * (8 + Math.abs(weapon.depth) * 16);
+            const depthAngle = Math.random() * Math.PI * 2;
+            const depthBurst = Math.max(0, weapon.depth) * (8 + Math.random() * 16);
             particlesRef.current.push({
               x: streamEnd.x, y: streamEnd.y,
-              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side,
-              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + 2,
+              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side + Math.cos(depthAngle) * depthBurst,
+              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + Math.sin(depthAngle) * depthBurst + 2,
               life: 28 + Math.random() * 20, maxLife: 48,
               scale: .18 + Math.random() * .45,
               spin: 0,
