@@ -7,15 +7,15 @@ body { background: #21170f; color: var(--paper); font-family: "STKaiti", "KaiTi"
 button { font: inherit; }
 .game { position: fixed; inset: 0; width: 100vw; height: 100dvh; overflow: hidden; isolation: isolate; touch-action: none; user-select: none; cursor: crosshair; background: #21170f; }
 .start-background { position: absolute; inset: 0; z-index: -1; background: linear-gradient(rgba(35,22,13,.05), rgba(35,22,13,.16)), url("/start-money.jpeg") center center / cover no-repeat; }
-.camera { position: absolute; inset: 0; z-index: -3; width: 100%; height: 100%; object-fit: contain; object-position: center; transform: scaleX(-1); filter: sepia(.09) saturate(.82) contrast(1.06) brightness(.88); opacity: 0; transition: opacity .5s ease; background: #160f0b; }
+.camera { position: absolute; inset: 0; z-index: -3; width: 100%; height: 100%; object-fit: contain; object-position: center; transform: scaleX(-1); filter: sepia(.24) saturate(.68) contrast(1.04) brightness(.94); opacity: 0; transition: opacity .5s ease; background: #b6a68e; }
 .camera.visible { opacity: 1; }
-.camera-tint { position: absolute; inset: 0; z-index: -2; background: radial-gradient(circle at 50% 45%, transparent 40%, rgba(22,13,7,.4) 100%); pointer-events: none; }
+.camera-tint { position: absolute; inset: 0; z-index: -2; background: linear-gradient(rgba(201,179,139,.16), rgba(111,82,48,.12)), radial-gradient(circle at 50% 45%, transparent 42%, rgba(43,25,12,.34) 100%); pointer-events: none; }
 .fx-canvas { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 
 .topbar { position: absolute; z-index: 5; top: max(22px, env(safe-area-inset-top)); left: 24px; right: 24px; display: flex; align-items: flex-start; justify-content: space-between; pointer-events: none; }
 .brand { color: var(--yellow); font-size: clamp(25px, 3vw, 40px); font-weight: 900; letter-spacing: .08em; text-shadow: -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111, 2px 2px 0 #111, 0 6px 13px rgba(0,0,0,.65); }
 .brand em { font-style: normal; }
-.score { color: var(--paper); text-align: right; text-shadow: 0 3px 10px rgba(0,0,0,.9), 1px 1px 0 #1a0c05; }
+.score { color: white; text-align: right; text-shadow: -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111, 2px 2px 0 #111, 0 4px 9px rgba(0,0,0,.7); }
 .score span { display: block; color: var(--yellow); font-weight: 900; font-size: 14px; letter-spacing: .18em; }
 .score strong { display: block; font-family: Arial, sans-serif; font-size: 34px; line-height: 1; margin-top: 3px; }
 .game:not(.live) .brand { opacity: 0; }
@@ -23,7 +23,7 @@ button { font: inherit; }
 .hud { position: absolute; z-index: 4; left: 50%; top: 58%; width: min(720px, calc(100% - 30px)); transform: translateX(-50%); text-align: center; pointer-events: none; }
 .hud-live { top: max(74px, calc(env(safe-area-inset-top) + 52px)); }
 .hud-live .hand-guides { display: none; }
-.live-dot { display: inline-flex; align-items: center; gap: 8px; color: white; font-family: "Microsoft YaHei", sans-serif; font-weight: 900; font-size: 12px; letter-spacing: .08em; text-shadow: 0 3px 9px #000, 1px 1px 0 #000; }
+.live-dot { display: inline-flex; align-items: center; gap: 8px; color: var(--yellow); font-family: "Microsoft YaHei", sans-serif; font-weight: 900; font-size: 14px; letter-spacing: .08em; text-shadow: -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111, 2px 2px 0 #111, 0 3px 8px #000; }
 .live-dot i { width: 9px; height: 9px; border-radius: 50%; background: #aaa; box-shadow: 0 0 9px rgba(0,0,0,.7); }
 .live-dot.live i { background: #54d36f; box-shadow: 0 0 0 4px rgba(84,211,111,.18), 0 0 12px #54d36f; animation: pulse 1.2s infinite; }
 .live-dot.loading i { background: var(--yellow); animation: pulse .65s infinite; }
@@ -45,7 +45,7 @@ footer { position: absolute; z-index: 3; bottom: 3.5%; left: 50%; transform: tra
 .hidden-footer { display: none; }
 
 .live-controls { position: absolute; z-index: 5; left: 50%; bottom: max(15px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 22px; width: max-content; max-width: calc(100% - 24px); pointer-events: none; }
-.live-controls span { display: flex; align-items: center; gap: 6px; color: white; font-family: "Microsoft YaHei", sans-serif; font-weight: 900; font-size: 11px; white-space: nowrap; text-shadow: 0 3px 8px #000, 1px 1px 0 #000; }
+.live-controls span { display: flex; align-items: center; gap: 6px; color: white; font-family: "Microsoft YaHei", sans-serif; font-weight: 900; font-size: 12px; white-space: nowrap; text-shadow: -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111, 2px 2px 0 #111, 0 3px 8px #000; }
 .live-controls span b { color: var(--yellow); font-size: 14px; }
 
 .corner-charms { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }

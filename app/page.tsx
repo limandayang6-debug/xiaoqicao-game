@@ -247,27 +247,40 @@ function drawHonestGrin(ctx: CanvasRenderingContext2D, center: Point, scale: num
   ctx.restore();
 }
 
-function drawClownMask(ctx: CanvasRenderingContext2D, face: FaceBox) {
-  const size = Math.max(face.width, face.height) * 1.05;
+function drawCalmMask(ctx: CanvasRenderingContext2D, face: FaceBox, source: HTMLImageElement | null) {
+  if (!source?.complete || !source.naturalWidth) return;
+  const maskWidth = face.width * 1.38;
+  const maskHeight = face.height * 1.58;
+  const maskY = face.y - face.height * .06;
+  ctx.save();
+  ctx.shadowColor = "rgba(36, 20, 10, .5)";
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.ellipse(face.x, maskY, maskWidth * .48, maskHeight * .49, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const sourceX = source.naturalWidth * .34;
+  const sourceY = source.naturalHeight * .29;
+  const sourceWidth = source.naturalWidth * .32;
+  const sourceHeight = source.naturalHeight * .27;
+  ctx.drawImage(
+    source,
+    sourceX, sourceY, sourceWidth, sourceHeight,
+    face.x - maskWidth / 2, maskY - maskHeight / 2, maskWidth, maskHeight,
+  );
+  ctx.restore();
+
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
-  ctx.shadowColor = "rgba(0,0,0,.38)";
-  ctx.shadowBlur = 12;
-  ctx.fillText("🤡", face.x, face.y + face.height * .03);
   const label = "防误伤";
-  ctx.font = `900 ${Math.max(16, face.width * .16)}px Arial, sans-serif`;
-  const labelWidth = ctx.measureText(label).width + 30;
-  const labelY = face.y - face.height * .68;
-  ctx.shadowBlur = 7;
-  ctx.fillStyle = "#ffd43b";
-  ctx.strokeStyle = "#21150f";
-  ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.roundRect(face.x - labelWidth / 2, labelY - 24, labelWidth, 38, 14); ctx.fill(); ctx.stroke();
-  ctx.shadowColor = "transparent";
-  ctx.fillStyle = "#21150f";
-  ctx.fillText(label, face.x, labelY - 5);
+  ctx.font = `900 ${Math.max(20, face.width * .19)}px "Microsoft YaHei", sans-serif`;
+  const labelY = face.y - face.height * .82;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = Math.max(5, face.width * .045);
+  ctx.strokeText(label, face.x, labelY);
+  ctx.fillStyle = "#ffdc21";
+  ctx.fillText(label, face.x, labelY);
   ctx.restore();
 }
 
@@ -284,6 +297,7 @@ export default function Home() {
     lastEmit: 0, lastWealthAt: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
+  const calmMaskRef = useRef<HTMLImageElement | null>(null);
   const pinchFramesRef = useRef(0);
   const openFramesRef = useRef(0);
   const cooldownRef = useRef(0);
@@ -527,6 +541,9 @@ export default function Home() {
   }, [handleFaceResults, handleResults]);
 
   useEffect(() => {
+    const calmMask = new Image();
+    calmMask.src = "/start-money.jpeg";
+    calmMaskRef.current = calmMask;
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
     const canvas = canvasRef.current;
@@ -538,7 +555,7 @@ export default function Home() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      if (faceBoxRef.current) drawClownMask(ctx, faceBoxRef.current);
+      if (faceBoxRef.current) drawCalmMask(ctx, faceBoxRef.current, calmMaskRef.current);
 
       const weapon = weaponRef.current;
       if (weapon.mode === "gun") {
