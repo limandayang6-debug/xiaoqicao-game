@@ -33,10 +33,29 @@ type Weapon = {
   lastMuzzle: Point;
   dripUntil: number;
 };
-type FaceBox = Point & { width: number; height: number };
+type FaceBox = Point & { width: number; height: number; angle: number };
+type HandLayer = { hull: Point[] };
 
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function convexHull(points: Point[]) {
+  if (points.length < 3) return points;
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower.at(-2)!, lower.at(-1)!, point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper: Point[] = [];
+  for (const point of sorted.reverse()) {
+    while (upper.length >= 2 && cross(upper.at(-2)!, upper.at(-1)!, point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
 }
 
 function drawPoop(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1, alpha = 1) {
@@ -141,7 +160,8 @@ function getGunMuzzle(palm: Point, direction: Point, scale: number) {
 function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, depth: number, now: number) {
   const perpendicular = { x: -direction.y, y: direction.x };
   const margin = 28;
-  const desired = 300 - Math.abs(depth) * 135;
+  // Strong Z movement is foreshortened, exactly like the right-hand throw.
+  const desired = 330 - Math.abs(depth) * 178;
   const limits = [desired];
   if (direction.x > .01) limits.push(Math.max(12, (window.innerWidth - margin - muzzle.x) / direction.x));
   if (direction.x < -.01) limits.push(Math.max(12, (margin - muzzle.x) / direction.x));
@@ -149,8 +169,8 @@ function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: 
   if (direction.y < -.01) limits.push(Math.max(12, (margin - muzzle.y) / direction.y));
   const length = Math.min(...limits);
   const end = { x: muzzle.x + direction.x * length, y: muzzle.y + direction.y * length };
-  const outward = depth > .34;
-  const inward = depth < -.34;
+  const outward = depth > .24;
+  const inward = depth < -.24;
   const maxEdgeWidth = Math.max(18, Math.min(54, end.x - 18, window.innerWidth - end.x - 18, end.y - 18, window.innerHeight - end.y - 18));
   const steps = 24;
   const left: Point[] = [];
@@ -160,9 +180,10 @@ function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: 
     const t = i / steps;
     const travel = length * t;
     const wave = Math.sin(t * 18 + now / 70) * (2 + t * 8);
-    let width = 3 + t * 25;
-    if (outward) width = 3 + Math.pow(t, 1.55) * maxEdgeWidth;
-    if (inward) width = 3 + Math.sin(t * Math.PI) * 15 + t * 2;
+    const perspective = Math.max(.18, 1 + depth * t * 1.75);
+    let width = (3 + Math.pow(t, 1.22) * 27) * perspective;
+    if (outward) width = 3 + Math.pow(t, 1.5) * maxEdgeWidth;
+    if (inward) width = Math.max(2, (3 + Math.sin(t * Math.PI) * 16 + t * 8) * perspective);
     width += Math.sin(t * 31 - now / 88) * (1 + t * 3.5);
     const cx = muzzle.x + direction.x * travel + perpendicular.x * wave;
     const cy = muzzle.y + direction.y * travel + perpendicular.y * wave;
@@ -203,16 +224,16 @@ function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: 
     ctx.stroke();
   }
 
-  const scatter = outward ? 24 : inward ? 9 : 17;
+  const scatter = outward ? 30 : inward ? 8 : 18;
   const scatterRadius = outward ? maxEdgeWidth * .82 : inward ? 12 : 27;
   for (let i = 0; i < scatter; i++) {
     const angle = (i / scatter) * Math.PI * 2 + Math.sin(i * 9.3) * .4;
     const radius = scatterRadius * (.35 + ((i * 37) % 11) / 11);
     const x = end.x + Math.cos(angle) * radius;
     const y = end.y + Math.sin(angle) * radius;
-    const size = inward ? 2 + (i % 3) : 3 + (i % 6);
+    const size = inward ? 1.5 + (i % 3) : outward ? 5 + (i % 8) : 3 + (i % 6);
     ctx.fillStyle = i % 4 ? "#542a16" : "#b36a34";
-    ctx.beginPath(); ctx.ellipse(x, y, size * 1.25, size, angle, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y, size * 1.35, size, angle, 0, Math.PI * 2); ctx.fill();
   }
 
   for (let i = 0; i < 18; i++) {
@@ -249,23 +270,34 @@ function drawHonestGrin(ctx: CanvasRenderingContext2D, center: Point, scale: num
 
 function drawCalmMask(ctx: CanvasRenderingContext2D, face: FaceBox, source: HTMLImageElement | null) {
   if (!source?.complete || !source.naturalWidth) return;
-  const maskWidth = face.width * 1.38;
-  const maskHeight = face.height * 1.58;
-  const maskY = face.y - face.height * .06;
+  const maskWidth = face.width * 1.18;
+  const maskHeight = face.height * 1.44;
+  const maskY = face.y - face.height * .08;
   ctx.save();
+  ctx.translate(face.x, maskY);
+  ctx.rotate(face.angle);
   ctx.shadowColor = "rgba(36, 20, 10, .5)";
   ctx.shadowBlur = 14;
+  // A fitted theatrical-mask silhouette: hat, temples, cheeks and chin.
   ctx.beginPath();
-  ctx.ellipse(face.x, maskY, maskWidth * .48, maskHeight * .49, 0, 0, Math.PI * 2);
+  ctx.moveTo(-maskWidth * .43, -maskHeight * .42);
+  ctx.quadraticCurveTo(-maskWidth * .38, -maskHeight * .57, -maskWidth * .18, -maskHeight * .58);
+  ctx.lineTo(maskWidth * .30, -maskHeight * .52);
+  ctx.quadraticCurveTo(maskWidth * .46, -maskHeight * .49, maskWidth * .44, -maskHeight * .31);
+  ctx.quadraticCurveTo(maskWidth * .52, -maskHeight * .08, maskWidth * .40, maskHeight * .20);
+  ctx.quadraticCurveTo(maskWidth * .28, maskHeight * .47, 0, maskHeight * .52);
+  ctx.quadraticCurveTo(-maskWidth * .29, maskHeight * .47, -maskWidth * .42, maskHeight * .18);
+  ctx.quadraticCurveTo(-maskWidth * .52, -maskHeight * .12, -maskWidth * .43, -maskHeight * .42);
+  ctx.closePath();
   ctx.clip();
-  const sourceX = source.naturalWidth * .34;
-  const sourceY = source.naturalHeight * .29;
-  const sourceWidth = source.naturalWidth * .32;
-  const sourceHeight = source.naturalHeight * .27;
+  const sourceX = source.naturalWidth * .325;
+  const sourceY = source.naturalHeight * .315;
+  const sourceWidth = source.naturalWidth * .325;
+  const sourceHeight = source.naturalHeight * .205;
   ctx.drawImage(
     source,
     sourceX, sourceY, sourceWidth, sourceHeight,
-    face.x - maskWidth / 2, maskY - maskHeight / 2, maskWidth, maskHeight,
+    -maskWidth / 2, -maskHeight / 2, maskWidth, maskHeight,
   );
   ctx.restore();
 
@@ -284,6 +316,35 @@ function drawCalmMask(ctx: CanvasRenderingContext2D, face: FaceBox, source: HTML
   ctx.restore();
 }
 
+function drawHandsAboveMask(ctx: CanvasRenderingContext2D, video: HTMLVideoElement | null, hands: HandLayer[]) {
+  if (!video || video.readyState < 2 || !hands.length) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const scale = Math.min(w / video.videoWidth, h / video.videoHeight);
+  const dw = video.videoWidth * scale;
+  const dh = video.videoHeight * scale;
+  const dx = (w - dw) / 2;
+  const dy = (h - dh) / 2;
+  for (const hand of hands) {
+    if (hand.hull.length < 3) continue;
+    const center = hand.hull.reduce((sum, p) => ({ x: sum.x + p.x / hand.hull.length, y: sum.y + p.y / hand.hull.length }), { x: 0, y: 0 });
+    const padded = hand.hull.map((p) => {
+      const length = Math.max(distance(p, center), 1);
+      return { x: p.x + (p.x - center.x) / length * 12, y: p.y + (p.y - center.y) / length * 12 };
+    });
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(padded[0].x, padded[0].y);
+    padded.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.clip();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, dx, dy, dw, dh);
+    ctx.restore();
+  }
+}
+
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -297,6 +358,7 @@ export default function Home() {
     lastEmit: 0, lastWealthAt: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
+  const handLayersRef = useRef<HandLayer[]>([]);
   const calmMaskRef = useRef<HTMLImageElement | null>(null);
   const pinchFramesRef = useRef(0);
   const openFramesRef = useRef(0);
@@ -376,6 +438,7 @@ export default function Home() {
     const cameraTop = (h - cameraHeight) / 2;
     let sawRight = false;
     let sawLeft = false;
+    const visibleHands: HandLayer[] = [];
 
     results.multiHandLandmarks?.forEach((landmarks, handIndex) => {
       const reported = results.multiHandedness?.[handIndex]?.label;
@@ -386,6 +449,7 @@ export default function Home() {
         y: cameraTop + landmarks[index].y * cameraHeight,
       });
       const wrist = p(0);
+      visibleHands.push({ hull: convexHull(landmarks.map((_, index) => p(index))) });
       const tips = [8, 12, 16, 20];
       const extendedTips = tips.filter((tip) => distance(p(tip), wrist) > distance(p(tip - 2), wrist) * 1.16);
 
@@ -454,6 +518,7 @@ export default function Home() {
       openFramesRef.current = 0;
     }
     if (!sawLeft && weaponRef.current.mode === "gun") weaponRef.current.mode = "none";
+    handLayersRef.current = visibleHands;
   }, [launchPoop, makePoop]);
 
   const handleFaceResults = useCallback((results: FaceResults) => {
@@ -472,11 +537,16 @@ export default function Home() {
     const cameraLeft = (w - cameraWidth) / 2;
     const cameraTop = (h - cameraHeight) / 2;
     const box = detection.boundingBox;
+    const keypoints = detection.landmarks as unknown as Array<{ x: number; y: number }> | undefined;
+    const eyeA = keypoints?.[0];
+    const eyeB = keypoints?.[1];
+    const angle = eyeA && eyeB ? Math.atan2((eyeB.y - eyeA.y) * cameraHeight, -(eyeB.x - eyeA.x) * cameraWidth) : 0;
     faceBoxRef.current = {
       x: cameraLeft + (1 - box.xCenter) * cameraWidth,
       y: cameraTop + box.yCenter * cameraHeight,
       width: box.width * cameraWidth,
       height: box.height * cameraHeight,
+      angle,
     };
   }, []);
 
@@ -556,6 +626,7 @@ export default function Home() {
       if (!ctx) return;
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       if (faceBoxRef.current) drawCalmMask(ctx, faceBoxRef.current, calmMaskRef.current);
+      drawHandsAboveMask(ctx, videoRef.current, handLayersRef.current);
 
       const weapon = weaponRef.current;
       if (weapon.mode === "gun") {
