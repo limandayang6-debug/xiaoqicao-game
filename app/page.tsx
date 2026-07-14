@@ -16,13 +16,11 @@ type Particle = Point & {
   vy: number;
   life: number;
   maxLife: number;
-  size: number;
+  scale: number;
   spin: number;
-  color: string;
-  kind: "blob" | "star";
+  mode: "burst" | "laser";
 };
-
-const COLORS = ["#5a2b16", "#7b3f1f", "#a95b2a", "#ffcf3d", "#ff7a59", "#fff3b0"];
+type Laser = { active: boolean; tip: Point; direction: Point; lastEmit: number };
 
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -89,7 +87,7 @@ export default function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const handPointRef = useRef<Point | null>(null);
+  const laserRef = useRef<Laser>({ active: false, tip: { x: 0, y: 0 }, direction: { x: 0, y: -1 }, lastEmit: 0 });
   const pinchFramesRef = useRef(0);
   const openFramesRef = useRef(0);
   const cooldownRef = useRef(0);
@@ -132,20 +130,20 @@ export default function Home() {
 
   const explode = useCallback((x: number, y: number) => {
     const particles: Particle[] = [];
-    const total = Math.min(115, Math.floor(window.innerWidth / 10));
+    const total = Math.min(105, Math.max(72, Math.floor(window.innerWidth / 8)));
     for (let i = 0; i < total; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 4 + Math.random() * 20;
+      const targetX = Math.random() * window.innerWidth;
+      const targetY = Math.random() * window.innerHeight;
+      const travel = 22 + Math.random() * 25;
       particles.push({
         x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - Math.random() * 5,
-        life: 55 + Math.random() * 50,
-        maxLife: 105,
-        size: 8 + Math.random() * 34,
+        vx: (targetX - x) / travel,
+        vy: (targetY - y) / travel - Math.random() * 3,
+        life: 78 + Math.random() * 55,
+        maxLife: 133,
+        scale: .12 + Math.pow(Math.random(), 1.6) * 1.18,
         spin: (Math.random() - .5) * .4,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        kind: Math.random() > .72 ? "star" : "blob",
+        mode: "burst",
       });
     }
     particlesRef.current.push(...particles);
@@ -156,30 +154,54 @@ export default function Home() {
   }, []);
 
   const handleResults = useCallback((results: Results) => {
-    const landmarks = results.multiHandLandmarks?.[0];
-    if (!landmarks) {
-      handPointRef.current = null;
-      pinchFramesRef.current = 0;
-      openFramesRef.current = 0;
-      return;
-    }
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const p = (index: number): Point => ({ x: (1 - landmarks[index].x) * w, y: landmarks[index].y * h });
-    const thumb = p(4);
-    const index = p(8);
-    const wrist = p(0);
-    const palm = Math.max(distance(wrist, p(9)), 30);
-    const pinchRatio = distance(thumb, index) / palm;
-    const extended = [8, 12, 16, 20].filter((tip) => distance(p(tip), wrist) > distance(p(tip - 2), wrist) * 1.16).length;
-    const pinching = pinchRatio < .48;
-    const open = extended >= 4 && pinchRatio > .85;
-    const midpoint = { x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 };
-    handPointRef.current = midpoint;
-    pinchFramesRef.current = pinching ? pinchFramesRef.current + 1 : 0;
-    openFramesRef.current = open ? openFramesRef.current + 1 : 0;
-    if (pinchFramesRef.current >= 2) makePoop(midpoint);
-    if (openFramesRef.current >= 2) launchPoop();
+    let sawRight = false;
+    let sawLeft = false;
+
+    results.multiHandLandmarks?.forEach((landmarks, handIndex) => {
+      const reported = results.multiHandedness?.[handIndex]?.label;
+      // The camera pixels are not flipped before inference, so MediaPipe's selfie labels are reversed.
+      const physicalHand = reported === "Left" ? "Right" : "Left";
+      const p = (index: number): Point => ({ x: (1 - landmarks[index].x) * w, y: landmarks[index].y * h });
+      const wrist = p(0);
+      const tips = [8, 12, 16, 20];
+      const extendedTips = tips.filter((tip) => distance(p(tip), wrist) > distance(p(tip - 2), wrist) * 1.16);
+
+      if (physicalHand === "Right") {
+        sawRight = true;
+        const thumb = p(4);
+        const index = p(8);
+        const palm = Math.max(distance(wrist, p(9)), 30);
+        const pinchRatio = distance(thumb, index) / palm;
+        const pinching = pinchRatio < .48;
+        const open = extendedTips.length >= 4 && pinchRatio > .85;
+        const midpoint = { x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 };
+        pinchFramesRef.current = pinching ? pinchFramesRef.current + 1 : 0;
+        openFramesRef.current = open ? openFramesRef.current + 1 : 0;
+        if (pinchFramesRef.current >= 2) makePoop(midpoint);
+        if (openFramesRef.current >= 2) launchPoop();
+      } else {
+        sawLeft = true;
+        const indexExtended = extendedTips.includes(8);
+        if (indexExtended) {
+          const tip = p(8);
+          const base = p(6);
+          const length = Math.max(distance(tip, base), 1);
+          laserRef.current.active = true;
+          laserRef.current.tip = tip;
+          laserRef.current.direction = { x: (tip.x - base.x) / length, y: (tip.y - base.y) / length };
+        } else if (extendedTips.length === 0) {
+          laserRef.current.active = false;
+        }
+      }
+    });
+
+    if (!sawRight) {
+      pinchFramesRef.current = 0;
+      openFramesRef.current = 0;
+    }
+    if (!sawLeft) laserRef.current.active = false;
   }, [launchPoop, makePoop]);
 
   const startCamera = useCallback(async () => {
@@ -205,7 +227,7 @@ export default function Home() {
       video.srcObject = stream;
       await video.play();
       const hands = new window.Hands({ locateFile: (file) => `/mediapipe/${file}` });
-      hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: .62, minTrackingConfidence: .55 });
+      hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: .62, minTrackingConfidence: .55 });
       hands.onResults(handleResults);
       handsRef.current = hands;
       runningRef.current = true;
@@ -216,7 +238,7 @@ export default function Home() {
       };
       detect();
       setStatus("live");
-      setMessage("PINCH YOUR FINGERS TO MAKE A POOP");
+      setMessage("RIGHT HAND THROWS · LEFT HAND FIRES");
     } catch (error) {
       console.error(error);
       setStatus("error");
@@ -236,6 +258,46 @@ export default function Home() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+      const laser = laserRef.current;
+      if (laser.active) {
+        const maxDistance = Math.hypot(window.innerWidth, window.innerHeight) * 1.25;
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "rgba(255, 205, 54, .28)";
+        ctx.lineWidth = 38 + Math.sin(now / 70) * 8;
+        ctx.shadowColor = "#ffcf3d";
+        ctx.shadowBlur = 30;
+        ctx.beginPath();
+        ctx.moveTo(laser.tip.x, laser.tip.y);
+        ctx.lineTo(laser.tip.x + laser.direction.x * maxDistance, laser.tip.y + laser.direction.y * maxDistance);
+        ctx.stroke();
+        ctx.restore();
+        for (let i = 0; i < 20; i++) {
+          const travel = ((i * 74 + now * .72) % maxDistance);
+          const wobble = Math.sin(i * 2.1 + now / 90) * 12;
+          const px = laser.tip.x + laser.direction.x * travel - laser.direction.y * wobble;
+          const py = laser.tip.y + laser.direction.y * travel + laser.direction.x * wobble;
+          const scale = .14 + ((i * 37) % 9) / 25;
+          drawPoop(ctx, px, py, scale, .96);
+        }
+        if (now - laser.lastEmit > 42) {
+          laser.lastEmit = now;
+          for (let i = 0; i < 7; i++) {
+            const spread = (Math.random() - .5) * 7;
+            particlesRef.current.push({
+              x: laser.tip.x, y: laser.tip.y,
+              vx: laser.direction.x * (18 + Math.random() * 17) - laser.direction.y * spread,
+              vy: laser.direction.y * (18 + Math.random() * 17) + laser.direction.x * spread,
+              life: 30 + Math.random() * 24, maxLife: 54,
+              scale: .09 + Math.random() * .44,
+              spin: (Math.random() - .5) * .45,
+              mode: "laser",
+            });
+          }
+          if (particlesRef.current.length > 230) particlesRef.current.splice(0, particlesRef.current.length - 230);
+        }
+      }
       const held = poopRef.current;
       if (held?.state === "held") {
         const bob = Math.sin((now - held.born) / 130) * 5;
@@ -270,21 +332,15 @@ export default function Home() {
       particlesRef.current = particlesRef.current.filter((particle) => {
         particle.x += particle.vx * dt;
         particle.y += particle.vy * dt;
-        particle.vy += .34 * dt;
-        particle.vx *= .992;
+        if (particle.mode === "burst") particle.vy += .22 * dt;
+        particle.vx *= particle.mode === "laser" ? .998 : .992;
         particle.life -= dt;
         const alpha = Math.min(1, particle.life / 22);
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(particle.x, particle.y);
         ctx.rotate(particle.life * particle.spin);
-        if (particle.kind === "star") drawStar(ctx, 0, 0, particle.size, particle.color);
-        else {
-          ctx.fillStyle = particle.color;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, particle.size, particle.size * .72, .4, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        drawPoop(ctx, 0, 0, particle.scale, alpha);
         ctx.restore();
         return particle.life > 0 && particle.y < window.innerHeight + 80;
       });
@@ -322,10 +378,9 @@ export default function Home() {
       <section className="hud" aria-live="polite">
         <div className={`live-dot ${status}`}><i />{status === "live" ? "CAMERA LIVE" : status === "loading" ? "LOADING" : "READY"}</div>
         <h1>{message}</h1>
-        <div className="gesture-guide">
-          <div><span className="gesture">🤏</span><p><b>PINCH</b><small>make a poop</small></p></div>
-          <i className="arrow">→</i>
-          <div><span className="gesture">🖐️</span><p><b>OPEN</b><small>launch & explode</small></p></div>
+        <div className="hand-guides">
+          <div className="gesture-guide"><strong>RIGHT</strong><span className="gesture">🤏 → 🖐️</span><p><b>THROW</b><small>pinch, then open</small></p></div>
+          <div className="gesture-guide laser-guide"><strong>LEFT</strong><span className="gesture">☝️ → ✊</span><p><b>POOP LASER</b><small>point to fire, fist to stop</small></p></div>
         </div>
       </section>
 

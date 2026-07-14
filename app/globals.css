@@ -23,8 +23,10 @@ button { font: inherit; }
 .live-dot.live i { background: #35c86b; box-shadow: 0 0 0 4px rgba(53,200,107,.2); animation: pulse 1.2s infinite; }
 .live-dot.loading i { background: #ff8b34; animation: pulse .6s infinite; }
 .hud h1 { margin: 23px auto 25px; max-width: 800px; color: var(--cream); font-size: clamp(28px, 5vw, 72px); line-height: .93; letter-spacing: -.055em; text-wrap: balance; -webkit-text-stroke: clamp(1.5px, .22vw, 3px) var(--ink); paint-order: stroke fill; filter: drop-shadow(6px 7px 0 var(--ink)); transform: rotate(-1deg); }
-.gesture-guide { margin: auto; display: inline-flex; align-items: center; gap: clamp(10px, 2vw, 26px); padding: 12px 20px; border: 3px solid var(--ink); border-radius: 22px; background: rgba(255,248,221,.92); box-shadow: 6px 6px 0 var(--ink); }
-.gesture-guide > div { display: flex; align-items: center; gap: 9px; text-align: left; }
+.hand-guides { display: flex; justify-content: center; align-items: stretch; gap: 15px; }
+.gesture-guide { display: inline-flex; align-items: center; gap: clamp(8px, 1.4vw, 18px); padding: 11px 17px; border: 3px solid var(--ink); border-radius: 22px; background: rgba(255,248,221,.92); box-shadow: 6px 6px 0 var(--ink); text-align: left; }
+.gesture-guide > strong { align-self: stretch; display: grid; place-items: center; padding-right: 12px; border-right: 2px dashed rgba(33,21,15,.35); font-size: 9px; letter-spacing: .16em; writing-mode: vertical-rl; transform: rotate(180deg); }
+.laser-guide { background: rgba(255,215,74,.94); }
 .gesture { font-size: clamp(28px, 4vw, 45px); filter: drop-shadow(2px 2px 0 rgba(33,21,15,.3)); }
 .gesture-guide p { margin: 0; line-height: 1; }
 .gesture-guide b { display: block; font-size: clamp(12px, 1.6vw, 17px); letter-spacing: .04em; }
@@ -43,7 +45,10 @@ footer { position: absolute; z-index: 3; bottom: 18px; left: 50%; transform: tra
   .score { min-width: 75px; padding: 7px 10px; }.score strong { font-size: 20px; }
   .hud { top: 18%; }.hud h1 { margin-top: 18px; margin-bottom: 20px; }
   .gesture-guide { gap: 7px; padding: 10px 12px; border-radius: 17px; }
-  .gesture-guide small { display: none; }.gesture-guide > div { gap: 4px; }
+  .hand-guides { flex-direction: column; align-items: center; gap: 9px; }
+  .gesture-guide { width: min(320px, calc(100vw - 42px)); justify-content: center; }
+  .gesture-guide small { display: none; }
+  .gesture-guide > strong { writing-mode: horizontal-tb; transform: none; }
   .start { bottom: 13%; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; } }
