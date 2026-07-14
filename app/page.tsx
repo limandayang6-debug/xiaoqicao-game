@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Hands as HandsClass, Results } from "@mediapipe/hands";
+import type { FaceDetection as FaceDetectionClass, Results as FaceResults } from "@mediapipe/face_detection";
 
 declare global {
   interface Window {
     Hands: new (config: { locateFile: (file: string) => string }) => HandsClass;
+    FaceDetection: new (config: { locateFile: (file: string) => string }) => FaceDetectionClass;
   }
 }
 
@@ -18,9 +20,18 @@ type Particle = Point & {
   maxLife: number;
   scale: number;
   spin: number;
-  mode: "burst" | "laser";
+  mode: "burst" | "sludge";
 };
-type Laser = { active: boolean; target: Point; lastEmit: number };
+type Weapon = {
+  mode: "none" | "gun" | "grin";
+  palm: Point;
+  direction: Point;
+  scale: number;
+  lastEmit: number;
+  lastMuzzle: Point;
+  dripUntil: number;
+};
+type FaceBox = Point & { width: number; height: number };
 
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -80,19 +91,147 @@ function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, size: num
   ctx.restore();
 }
 
+function drawGun(ctx: CanvasRenderingContext2D, palm: Point, direction: Point, scale: number, alpha = 1) {
+  const angle = Math.atan2(direction.y, direction.x);
+  ctx.save();
+  ctx.translate(palm.x, palm.y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "rgba(10, 8, 5, .36)";
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 7;
+  const metal = ctx.createLinearGradient(-65, -26, -65, 26);
+  metal.addColorStop(0, "#f1f3ed");
+  metal.addColorStop(.42, "#aeb5b3");
+  metal.addColorStop(1, "#6f7779");
+  ctx.fillStyle = metal;
+  ctx.beginPath();
+  ctx.roundRect(-58, -25, 112, 48, 18);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(48, -32); ctx.lineTo(78, -22); ctx.lineTo(78, 22); ctx.lineTo(48, 31); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#525b5e";
+  ctx.beginPath(); ctx.ellipse(77, 0, 9, 23, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#9aa2a1";
+  ctx.beginPath(); ctx.ellipse(-58, 0, 20, 24, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#26335b";
+  ctx.beginPath(); ctx.moveTo(-44, 17); ctx.lineTo(-10, 20); ctx.lineTo(-20, 72); ctx.lineTo(-53, 65); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#e4b928";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-42, -12); ctx.bezierCurveTo(-20, -34, -7, 12, 10, -13);
+  ctx.bezierCurveTo(24, -31, 30, 8, 47, -12); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-19, 46, 9, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#f3d35b";
+  ctx.beginPath(); ctx.arc(12, -12, 4, 0, Math.PI * 2); ctx.arc(46, -12, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  return { x: palm.x + Math.cos(angle) * 78 * scale, y: palm.y + Math.sin(angle) * 78 * scale };
+}
+
+function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, now: number) {
+  const perpendicular = { x: -direction.y, y: direction.x };
+  const length = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
+  const end = { x: muzzle.x + direction.x * length, y: muzzle.y + direction.y * length };
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const wave = Math.sin(now / 75) * 8;
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(muzzle.x, muzzle.y);
+    ctx.bezierCurveTo(
+      muzzle.x + direction.x * length * .34 + perpendicular.x * wave,
+      muzzle.y + direction.y * length * .34 + perpendicular.y * wave,
+      muzzle.x + direction.x * length * .68 - perpendicular.x * wave,
+      muzzle.y + direction.y * length * .68 - perpendicular.y * wave,
+      end.x, end.y,
+    );
+  };
+  ctx.shadowColor = "rgba(62, 27, 10, .65)";
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = "rgba(63, 31, 14, .94)"; ctx.lineWidth = 34; trace(); ctx.stroke();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(121, 65, 29, .98)"; ctx.lineWidth = 26; trace(); ctx.stroke();
+  ctx.strokeStyle = "rgba(175, 102, 48, .78)"; ctx.lineWidth = 10; trace(); ctx.stroke();
+  ctx.strokeStyle = "rgba(236, 172, 91, .52)"; ctx.lineWidth = 3; trace(); ctx.stroke();
+  for (let i = 0; i < 11; i++) {
+    const travel = ((i * 47 + now * .48) % length);
+    const wobble = Math.sin(i * 2.4 + now / 90) * 8;
+    const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
+    const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
+    ctx.fillStyle = i % 3 ? "#5f3219" : "#c47b3b";
+    ctx.beginPath(); ctx.ellipse(x, y, 3 + i % 4, 2 + i % 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  return end;
+}
+
+function drawHonestGrin(ctx: CanvasRenderingContext2D, center: Point, scale: number) {
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.scale(scale, scale);
+  ctx.shadowColor = "rgba(45, 21, 10, .35)";
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "#f2ad55";
+  ctx.beginPath(); ctx.arc(0, 0, 43, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "#402316"; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(-15, -7, 7, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(15, -7, 7, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  ctx.fillStyle = "#d97554";
+  ctx.beginPath(); ctx.arc(-26, 7, 7, 0, Math.PI * 2); ctx.arc(26, 7, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "white"; ctx.strokeStyle = "#402316"; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(-25, 8, 50, 22, 8); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-8, 9); ctx.lineTo(-8, 29); ctx.moveTo(8, 9); ctx.lineTo(8, 29); ctx.stroke();
+  ctx.restore();
+}
+
+function drawClownMask(ctx: CanvasRenderingContext2D, face: FaceBox) {
+  const size = Math.max(face.width, face.height) * 1.05;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+  ctx.shadowColor = "rgba(0,0,0,.38)";
+  ctx.shadowBlur = 12;
+  ctx.fillText("🤡", face.x, face.y + face.height * .03);
+  const label = "防误伤";
+  ctx.font = `900 ${Math.max(16, face.width * .16)}px Arial, sans-serif`;
+  const labelWidth = ctx.measureText(label).width + 30;
+  const labelY = face.y - face.height * .68;
+  ctx.shadowBlur = 7;
+  ctx.fillStyle = "#ffd43b";
+  ctx.strokeStyle = "#21150f";
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(face.x - labelWidth / 2, labelY - 24, labelWidth, 38, 14); ctx.fill(); ctx.stroke();
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = "#21150f";
+  ctx.fillText(label, face.x, labelY - 5);
+  ctx.restore();
+}
+
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handsRef = useRef<HandsClass | null>(null);
+  const faceDetectionRef = useRef<FaceDetectionClass | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const laserRef = useRef<Laser>({ active: false, target: { x: 0, y: 0 }, lastEmit: 0 });
+  const weaponRef = useRef<Weapon>({
+    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, scale: 1,
+    lastEmit: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
+  });
+  const faceBoxRef = useRef<FaceBox | null>(null);
   const pinchFramesRef = useRef(0);
   const openFramesRef = useRef(0);
   const cooldownRef = useRef(0);
   const flashRef = useRef(0);
   const rafRef = useRef(0);
+  const detectRafRef = useRef(0);
   const runningRef = useRef(false);
   const [status, setStatus] = useState<"idle" | "loading" | "live" | "error">("idle");
   const [message, setMessage] = useState("Ready for absolute nonsense?");
@@ -194,12 +333,22 @@ export default function Home() {
       } else {
         sawLeft = true;
         const indexExtended = extendedTips.includes(8);
+        const palm = p(9);
+        const base = p(6);
+        const tip = p(8);
+        const directionLength = Math.max(distance(base, tip), 1);
+        const direction = { x: (tip.x - base.x) / directionLength, y: (tip.y - base.y) / directionLength };
+        const weaponScale = Math.min(1.28, Math.max(.58, distance(wrist, palm) / 78));
         if (indexExtended) {
-          laserRef.current.active = true;
-          // The fingertip itself is the crosshair: wherever it appears on screen is where the stream lands.
-          laserRef.current.target = p(8);
+          weaponRef.current.mode = "gun";
+          weaponRef.current.palm = palm;
+          weaponRef.current.direction = direction;
+          weaponRef.current.scale = weaponScale;
         } else if (extendedTips.length === 0) {
-          laserRef.current.active = false;
+          if (weaponRef.current.mode === "gun") weaponRef.current.dripUntil = performance.now() + 1100;
+          weaponRef.current.mode = "grin";
+          weaponRef.current.palm = palm;
+          weaponRef.current.scale = weaponScale;
         }
       }
     });
@@ -208,8 +357,32 @@ export default function Home() {
       pinchFramesRef.current = 0;
       openFramesRef.current = 0;
     }
-    if (!sawLeft) laserRef.current.active = false;
+    if (!sawLeft && weaponRef.current.mode === "gun") weaponRef.current.mode = "none";
   }, [launchPoop, makePoop]);
+
+  const handleFaceResults = useCallback((results: FaceResults) => {
+    const detection = results.detections?.[0];
+    if (!detection) {
+      faceBoxRef.current = null;
+      return;
+    }
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const sourceWidth = videoRef.current?.videoWidth || w;
+    const sourceHeight = videoRef.current?.videoHeight || h;
+    const containScale = Math.min(w / sourceWidth, h / sourceHeight);
+    const cameraWidth = sourceWidth * containScale;
+    const cameraHeight = sourceHeight * containScale;
+    const cameraLeft = (w - cameraWidth) / 2;
+    const cameraTop = (h - cameraHeight) / 2;
+    const box = detection.boundingBox;
+    faceBoxRef.current = {
+      x: cameraLeft + (1 - box.xCenter) * cameraWidth,
+      y: cameraTop + box.yCenter * cameraHeight,
+      width: box.width * cameraWidth,
+      height: box.height * cameraHeight,
+    };
+  }, []);
 
   const startCamera = useCallback(async () => {
     setStatus("loading");
@@ -221,6 +394,15 @@ export default function Home() {
           script.src = "/mediapipe/hands.js";
           script.onload = () => resolve();
           script.onerror = () => reject(new Error("Could not load hand tracking"));
+          document.head.appendChild(script);
+        });
+      }
+      if (!window.FaceDetection) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "/face/face_detection.js";
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Could not load face tracking"));
           document.head.appendChild(script);
         });
       }
@@ -237,11 +419,20 @@ export default function Home() {
       hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: .62, minTrackingConfidence: .55 });
       hands.onResults(handleResults);
       handsRef.current = hands;
+      const faceDetection = new window.FaceDetection({ locateFile: (file) => `/face/${file}` });
+      faceDetection.setOptions({ model: "short", minDetectionConfidence: .55 });
+      faceDetection.onResults(handleFaceResults);
+      faceDetectionRef.current = faceDetection;
       runningRef.current = true;
+      let frame = 0;
       const detect = async () => {
         if (!runningRef.current || !videoRef.current || !handsRef.current) return;
-        if (videoRef.current.readyState >= 2) await handsRef.current.send({ image: videoRef.current });
-        rafRef.current = requestAnimationFrame(detect);
+        if (videoRef.current.readyState >= 2) {
+          await handsRef.current.send({ image: videoRef.current });
+          frame++;
+          if (frame % 3 === 0 && faceDetectionRef.current) await faceDetectionRef.current.send({ image: videoRef.current });
+        }
+        detectRafRef.current = requestAnimationFrame(detect);
       };
       detect();
       setStatus("live");
@@ -251,7 +442,7 @@ export default function Home() {
       setStatus("error");
       setMessage("CAMERA SAID NO — USE PRESS & RELEASE");
     }
-  }, [handleResults]);
+  }, [handleFaceResults, handleResults]);
 
   useEffect(() => {
     resizeCanvas();
@@ -265,47 +456,45 @@ export default function Home() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      if (faceBoxRef.current) drawClownMask(ctx, faceBoxRef.current);
 
-      const laser = laserRef.current;
-      if (laser.active) {
-        const pulse = 1 + Math.sin(now / 75) * .12;
-        ctx.save();
-        ctx.translate(laser.target.x, laser.target.y);
-        ctx.strokeStyle = "rgba(255, 216, 55, .95)";
-        ctx.lineWidth = 5;
-        ctx.shadowColor = "#ffcf3d";
-        ctx.shadowBlur = 24;
-        ctx.setLineDash([8, 8]);
-        ctx.lineDashOffset = -now / 18;
-        ctx.beginPath();
-        ctx.arc(0, 0, 45 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(-62, 0); ctx.lineTo(-24, 0);
-        ctx.moveTo(62, 0); ctx.lineTo(24, 0);
-        ctx.moveTo(0, -62); ctx.lineTo(0, -24);
-        ctx.moveTo(0, 62); ctx.lineTo(0, 24);
-        ctx.stroke();
-        ctx.restore();
-        drawPoop(ctx, laser.target.x, laser.target.y, .32 + Math.sin(now / 60) * .05, .98);
-        if (now - laser.lastEmit > 42) {
-          laser.lastEmit = now;
-          for (let i = 0; i < 10; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 8 + Math.random() * 23;
+      const weapon = weaponRef.current;
+      if (weapon.mode === "gun") {
+        const muzzle = drawGun(ctx, weapon.palm, weapon.direction, weapon.scale);
+        weapon.lastMuzzle = muzzle;
+        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, now);
+        if (now - weapon.lastEmit > 36) {
+          weapon.lastEmit = now;
+          for (let i = 0; i < 7; i++) {
+            const side = (Math.random() - .5) * 8;
             particlesRef.current.push({
-              x: laser.target.x, y: laser.target.y,
-              vx: Math.cos(angle) * speed,
-              vy: Math.sin(angle) * speed,
-              life: 27 + Math.random() * 22, maxLife: 49,
-              scale: .08 + Math.random() * .5,
-              spin: (Math.random() - .5) * .45,
-              mode: "laser",
+              x: streamEnd.x, y: streamEnd.y,
+              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side,
+              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + 2,
+              life: 28 + Math.random() * 20, maxLife: 48,
+              scale: .18 + Math.random() * .45,
+              spin: 0,
+              mode: "sludge",
             });
           }
-          if (particlesRef.current.length > 230) particlesRef.current.splice(0, particlesRef.current.length - 230);
+        }
+      } else if (weapon.mode === "grin") {
+        drawGun(ctx, weapon.palm, weapon.direction, weapon.scale, .82);
+        drawHonestGrin(ctx, weapon.palm, weapon.scale * .9);
+      }
+      if (now < weapon.dripUntil) {
+        if (now - weapon.lastEmit > 105) {
+          weapon.lastEmit = now;
+          particlesRef.current.push({
+            x: weapon.lastMuzzle.x + (Math.random() - .5) * 7,
+            y: weapon.lastMuzzle.y + 5,
+            vx: (Math.random() - .5) * .8,
+            vy: 2.5 + Math.random() * 2.2,
+            life: 42 + Math.random() * 18, maxLife: 60,
+            scale: .12 + Math.random() * .17,
+            spin: 0,
+            mode: "sludge",
+          });
         }
       }
       const held = poopRef.current;
@@ -342,15 +531,25 @@ export default function Home() {
       particlesRef.current = particlesRef.current.filter((particle) => {
         particle.x += particle.vx * dt;
         particle.y += particle.vy * dt;
-        if (particle.mode === "burst") particle.vy += .22 * dt;
-        particle.vx *= particle.mode === "laser" ? .998 : .992;
+        particle.vy += (particle.mode === "sludge" ? .42 : .22) * dt;
+        particle.vx *= particle.mode === "sludge" ? .985 : .992;
         particle.life -= dt;
         const alpha = Math.min(1, particle.life / 22);
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(particle.x, particle.y);
         ctx.rotate(particle.life * particle.spin);
-        drawPoop(ctx, 0, 0, particle.scale, alpha);
+        if (particle.mode === "burst") {
+          drawPoop(ctx, 0, 0, particle.scale, alpha);
+        } else {
+          const radius = 7 + particle.scale * 25;
+          ctx.fillStyle = "#713719";
+          ctx.beginPath();
+          ctx.ellipse(0, 0, radius * .72, radius, particle.vx * .02, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(225, 151, 75, .45)";
+          ctx.beginPath(); ctx.ellipse(-radius * .2, -radius * .28, radius * .16, radius * .3, -.4, 0, Math.PI * 2); ctx.fill();
+        }
         ctx.restore();
         return particle.life > 0 && particle.y < window.innerHeight + 80;
       });
@@ -360,9 +559,11 @@ export default function Home() {
     return () => {
       window.removeEventListener("resize", resizeCanvas);
       cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(detectRafRef.current);
       runningRef.current = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
       handsRef.current?.close();
+      faceDetectionRef.current?.close();
     };
   }, [explode, resizeCanvas]);
 

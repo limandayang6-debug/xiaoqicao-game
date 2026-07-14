@@ -16,6 +16,7 @@
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
   },
   "dependencies": {
+    "@mediapipe/face_detection": "^0.4.1646425229",
     "@mediapipe/hands": "^0.4.1675469240",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
