@@ -26,6 +26,7 @@ type Weapon = {
   mode: "none" | "gun" | "grin";
   palm: Point;
   direction: Point;
+  depth: number;
   scale: number;
   lastEmit: number;
   lastMuzzle: Point;
@@ -136,56 +137,85 @@ function getGunMuzzle(palm: Point, direction: Point, scale: number) {
   return { x: palm.x + Math.cos(angle) * 87 * scale, y: palm.y + Math.sin(angle) * 87 * scale };
 }
 
-function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, now: number) {
+function drawMudStream(ctx: CanvasRenderingContext2D, muzzle: Point, direction: Point, depth: number, now: number) {
   const perpendicular = { x: -direction.y, y: direction.x };
-  const length = Math.min(360, Math.hypot(window.innerWidth, window.innerHeight) * .34);
+  const margin = 28;
+  const desired = 300 - Math.abs(depth) * 135;
+  const limits = [desired];
+  if (direction.x > .01) limits.push(Math.max(12, (window.innerWidth - margin - muzzle.x) / direction.x));
+  if (direction.x < -.01) limits.push(Math.max(12, (margin - muzzle.x) / direction.x));
+  if (direction.y > .01) limits.push(Math.max(12, (window.innerHeight - margin - muzzle.y) / direction.y));
+  if (direction.y < -.01) limits.push(Math.max(12, (margin - muzzle.y) / direction.y));
+  const length = Math.min(...limits);
   const end = { x: muzzle.x + direction.x * length, y: muzzle.y + direction.y * length };
-  ctx.save();
-  ctx.shadowColor = "rgba(48, 22, 9, .68)";
-  ctx.shadowBlur = 20;
+  const outward = depth > .34;
+  const inward = depth < -.34;
+  const maxEdgeWidth = Math.max(18, Math.min(54, end.x - 18, window.innerWidth - end.x - 18, end.y - 18, window.innerHeight - end.y - 18));
+  const steps = 24;
+  const left: Point[] = [];
+  const right: Point[] = [];
 
-  const steps = 20;
-    const left: Point[] = [];
-    const right: Point[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const travel = length * t;
+    const wave = Math.sin(t * 18 + now / 70) * (2 + t * 8);
+    let width = 3 + t * 25;
+    if (outward) width = 3 + Math.pow(t, 1.55) * maxEdgeWidth;
+    if (inward) width = 3 + Math.sin(t * Math.PI) * 15 + t * 2;
+    width += Math.sin(t * 31 - now / 88) * (1 + t * 3.5);
+    const cx = muzzle.x + direction.x * travel + perpendicular.x * wave;
+    const cy = muzzle.y + direction.y * travel + perpendicular.y * wave;
+    left.push({ x: cx + perpendicular.x * width, y: cy + perpendicular.y * width });
+    right.push({ x: cx - perpendicular.x * width, y: cy - perpendicular.y * width });
+  }
+
+  ctx.save();
+  ctx.shadowColor = "rgba(43, 18, 8, .75)";
+  ctx.shadowBlur = 18;
+  const mud = ctx.createLinearGradient(muzzle.x, muzzle.y, end.x, end.y);
+  mud.addColorStop(0, "#8c4c24");
+  mud.addColorStop(.34, "#6e371b");
+  mud.addColorStop(.72, "#502713");
+  mud.addColorStop(1, inward ? "rgba(47,24,13,.72)" : "#35190d");
+  ctx.fillStyle = mud;
+  ctx.beginPath();
+  ctx.moveTo(muzzle.x, muzzle.y);
+  left.forEach((point) => ctx.lineTo(point.x, point.y));
+  right.reverse().forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowColor = "transparent";
+  for (let lane = 0; lane < 5; lane++) {
+    ctx.strokeStyle = lane % 2 ? "rgba(205,132,68,.3)" : "rgba(34,16,9,.43)";
+    ctx.lineWidth = 2.5 + lane;
+    ctx.lineCap = "round";
+    ctx.beginPath();
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const travel = length * t;
-      const wave = Math.sin(t * 16 + now / 75) * (3 + t * 10);
-      const width = 4 + t * 23 + Math.sin(t * 25 - now / 95) * (1 + t * 4);
-      const cx = muzzle.x + direction.x * travel + perpendicular.x * wave;
-      const cy = muzzle.y + direction.y * travel + perpendicular.y * wave;
-      left.push({ x: cx + perpendicular.x * width, y: cy + perpendicular.y * width });
-      right.push({ x: cx - perpendicular.x * width, y: cy - perpendicular.y * width });
+      const offset = Math.sin(t * (14 + lane) + now / (76 + lane * 9)) * (1.5 + t * 10) + (lane - 2) * 3;
+      const x = muzzle.x + direction.x * travel + perpendicular.x * offset;
+      const y = muzzle.y + direction.y * travel + perpendicular.y * offset;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
-    const mud = ctx.createLinearGradient(muzzle.x, muzzle.y, end.x, end.y);
-    mud.addColorStop(0, "#713719");
-    mud.addColorStop(.45, "#5d2e17");
-    mud.addColorStop(1, "#3d1f10");
-    ctx.fillStyle = mud;
-    ctx.beginPath();
-    ctx.moveTo(muzzle.x, muzzle.y);
-    left.forEach((point) => ctx.lineTo(point.x, point.y));
-    right.reverse().forEach((point) => ctx.lineTo(point.x, point.y));
-    ctx.closePath(); ctx.fill();
-    ctx.shadowColor = "transparent";
-    for (let lane = 0; lane < 4; lane++) {
-      ctx.strokeStyle = lane % 2 ? "rgba(190,115,55,.34)" : "rgba(41,21,12,.46)";
-      ctx.lineWidth = 3 + lane * 1.4;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const travel = length * t;
-        const offset = Math.sin(t * (13 + lane) + now / (82 + lane * 8)) * (2 + t * 12) + (lane - 1.5) * 4;
-        const x = muzzle.x + direction.x * travel + perpendicular.x * offset;
-        const y = muzzle.y + direction.y * travel + perpendicular.y * offset;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-  ctx.shadowColor = "transparent";
-  for (let i = 0; i < 16; i++) {
-    const travel = ((i * 37 + now * .55) % length);
+    ctx.stroke();
+  }
+
+  const scatter = outward ? 24 : inward ? 9 : 17;
+  const scatterRadius = outward ? maxEdgeWidth * .82 : inward ? 12 : 27;
+  for (let i = 0; i < scatter; i++) {
+    const angle = (i / scatter) * Math.PI * 2 + Math.sin(i * 9.3) * .4;
+    const radius = scatterRadius * (.35 + ((i * 37) % 11) / 11);
+    const x = end.x + Math.cos(angle) * radius;
+    const y = end.y + Math.sin(angle) * radius;
+    const size = inward ? 2 + (i % 3) : 3 + (i % 6);
+    ctx.fillStyle = i % 4 ? "#542a16" : "#b36a34";
+    ctx.beginPath(); ctx.ellipse(x, y, size * 1.25, size, angle, 0, Math.PI * 2); ctx.fill();
+  }
+
+  for (let i = 0; i < 18; i++) {
+    const travel = ((i * 31 + now * .5) % length);
     const wobble = Math.sin(i * 2.4 + now / 90) * 7;
     const x = muzzle.x + direction.x * travel + perpendicular.x * wobble;
     const y = muzzle.y + direction.y * travel + perpendicular.y * wobble;
@@ -249,7 +279,7 @@ export default function Home() {
   const poopRef = useRef<Poop | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const weaponRef = useRef<Weapon>({
-    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, scale: 1,
+    mode: "none", palm: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, depth: 0, scale: 1,
     lastEmit: 0, lastMuzzle: { x: 0, y: 0 }, dripUntil: 0,
   });
   const faceBoxRef = useRef<FaceBox | null>(null);
@@ -381,6 +411,9 @@ export default function Home() {
         const base = p(6);
         const tip = p(8);
         const screenLength = distance(base, tip);
+        const depthPixels = (landmarks[6].z - landmarks[8].z) * cameraWidth;
+        const spatialLength = Math.max(Math.hypot(screenLength, depthPixels), 1);
+        const depth = Math.max(-1, Math.min(1, depthPixels / spatialLength));
         const direction = screenLength > 8
           ? { x: (tip.x - base.x) / screenLength, y: (tip.y - base.y) / screenLength }
           : weaponRef.current.direction;
@@ -389,6 +422,7 @@ export default function Home() {
           weaponRef.current.mode = "gun";
           weaponRef.current.palm = palm;
           weaponRef.current.direction = direction;
+          weaponRef.current.depth = depth;
           weaponRef.current.scale = weaponScale;
         } else if (straightFingers.every((value) => !value)) {
           if (weaponRef.current.mode === "gun") weaponRef.current.dripUntil = performance.now() + 1100;
@@ -508,16 +542,18 @@ export default function Home() {
       if (weapon.mode === "gun") {
         const muzzle = getGunMuzzle(weapon.palm, weapon.direction, weapon.scale);
         weapon.lastMuzzle = muzzle;
-        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, now);
+        const streamEnd = drawMudStream(ctx, muzzle, weapon.direction, weapon.depth, now);
         drawGun(ctx, weapon.palm, weapon.direction, weapon.scale);
         if (now - weapon.lastEmit > 36) {
           weapon.lastEmit = now;
           for (let i = 0; i < 7; i++) {
             const side = (Math.random() - .5) * 8;
+            const scatterAngle = Math.random() * Math.PI * 2;
+            const outwardSpeed = Math.max(0, weapon.depth) * (4 + Math.random() * 8);
             particlesRef.current.push({
               x: streamEnd.x, y: streamEnd.y,
-              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side,
-              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + 2,
+              vx: weapon.direction.x * (5 + Math.random() * 9) - weapon.direction.y * side + Math.cos(scatterAngle) * outwardSpeed,
+              vy: weapon.direction.y * (5 + Math.random() * 9) + weapon.direction.x * side + Math.sin(scatterAngle) * outwardSpeed + 2,
               life: 28 + Math.random() * 20, maxLife: 48,
               scale: .18 + Math.random() * .45,
               spin: 0,
@@ -643,7 +679,7 @@ export default function Home() {
 
       <section className={`hud ${status === "live" ? "hud-live" : ""}`} aria-live="polite">
         <div className={`live-dot ${status}`}><i />{status === "live" ? "CAMERA LIVE" : status === "loading" ? "LOADING" : "READY"}</div>
-        <h1>{message}</h1>
+        {status !== "live" && <h1>{message}</h1>}
         <div className="hand-guides">
           <div className="gesture-guide"><strong>RIGHT</strong><span className="gesture">🤏 → 🖐️</span><p><b>THROW</b><small>pinch, then open</small></p></div>
           <div className="gesture-guide laser-guide"><strong>LEFT</strong><span className="gesture">☝️ → ✊</span><p><b>POOP LASER</b><small>point to fire, fist to stop</small></p></div>
